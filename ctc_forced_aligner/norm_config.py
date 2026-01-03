@@ -172,15 +172,20 @@ nominal_digit_shapes = r"\u206f"
 
 # Load punctuations from MMS-lab data
 import sys
-if hasattr(sys, 'frozen'):
+
+if hasattr(sys, "frozen"):
     base_dir = os.path.dirname(sys.executable)
     candidates = [
-        os.path.join(sys._MEIPASS, 'ctc_forced_aligner', 'punctuations.lst') if hasattr(sys, '_MEIPASS') else None,
-        os.path.join(os.path.dirname(__file__), 'punctuations.lst'),
-        os.path.join(base_dir, '_internal', 'ctc_forced_aligner', 'punctuations.lst')
+        (
+            os.path.join(sys._MEIPASS, "ctc_forced_aligner", "punctuations.lst")
+            if hasattr(sys, "_MEIPASS")
+            else None
+        ),
+        os.path.join(os.path.dirname(__file__), "punctuations.lst"),
+        os.path.join(base_dir, "_internal", "ctc_forced_aligner", "punctuations.lst"),
     ]
     punc_path = next((p for p in candidates if p and os.path.exists(p)), None)
-    
+
     if not punc_path:
         punc_path = f"{os.path.dirname(__file__)}/punctuations.lst"
 else:
