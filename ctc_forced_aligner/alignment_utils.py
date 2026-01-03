@@ -12,6 +12,12 @@ from transformers import AutoModelForCTC, AutoTokenizer
 from transformers import __version__ as transformers_version
 from transformers.utils import is_flash_attn_2_available
 
+# Explicit import to help PyInstaller find the model class
+try:
+    from transformers import Wav2Vec2ForCTC
+except ImportError:
+    pass
+
 from .ctc_forced_aligner import forced_align as forced_align_cpp
 
 SAMPLING_FREQ = 16000
