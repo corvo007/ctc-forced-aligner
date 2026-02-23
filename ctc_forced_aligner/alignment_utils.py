@@ -1,11 +1,11 @@
 import math
 
 from dataclasses import dataclass
+from subprocess import CalledProcessError, run
 from typing import Optional, Tuple
 
 import numpy as np
 import torch
-import torchaudio
 
 from packaging import version
 from transformers import AutoModelForCTC, AutoTokenizer
@@ -81,9 +81,7 @@ def get_spans(tokens, segments, blank):
             prev_seg = segments[start - 1]
             if prev_seg.label == blank:
                 pad_start = (
-                    prev_seg.start
-                    if (idx == 0)
-                    else int((prev_seg.start + prev_seg.end) / 2)
+                    prev_seg.start if (idx == 0) else int((prev_seg.start + prev_seg.end) / 2)
                 )
                 span = [Segment(blank, pad_start, span[0].start)] + span
         if end + 1 < len(segments):
@@ -100,15 +98,48 @@ def get_spans(tokens, segments, blank):
 
 
 def load_audio(audio_file: str, dtype: torch.dtype, device: str):
-    waveform, audio_sf = torchaudio.load(audio_file)  # waveform: channels X T
-    waveform = torch.mean(waveform, dim=0)
+    """
+    Open an audio file and read as mono waveform, resampling as necessary
 
-    if audio_sf != SAMPLING_FREQ:
-        waveform = torchaudio.functional.resample(
-            waveform, orig_freq=audio_sf, new_freq=SAMPLING_FREQ
-        )
-    waveform = waveform.to(dtype).to(device)
-    return waveform
+    Parameters
+    ----------
+    audio_file: str
+        The audio file to open
+
+    dtype: torch.dtype
+        The desired data type of the returned tensor
+
+    device: str
+        The device to place the returned tensor on
+
+    Returns
+    -------
+    A PyTorch tensor containing the audio waveform, in requested dtype.
+    """
+
+    # This launches a subprocess to decode audio while down-mixing
+    # and resampling as necessary.  Requires the ffmpeg CLI in PATH.
+    # fmt: off
+    cmd = [
+        "ffmpeg",
+        "-nostdin",
+        "-threads", "0",
+        "-i", audio_file,
+        "-f", "s16le",
+        "-ac", "1",
+        "-acodec", "pcm_s16le",
+        "-ar", str(SAMPLING_FREQ),
+        "-"
+    ]
+    # fmt: on
+    try:
+        out = run(cmd, capture_output=True, check=True).stdout
+    except CalledProcessError as e:
+        raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
+    except FileNotFoundError:
+        raise ImportError("ffmpeg not found. Please ensure ffmpeg is installed and in PATH.")
+
+    return torch.frombuffer(out, dtype=torch.int16).flatten().to(dtype).to(device) / 32768.0
 
 
 def generate_emissions(
@@ -128,12 +159,8 @@ def generate_emissions(
         # batching the input tensor and including a context
         # before and after the input tensor
         context = int(context_length * SAMPLING_FREQ)
-        extension = math.ceil(
-            audio_waveform.size(0) / window
-        ) * window - audio_waveform.size(0)
-        padded_waveform = torch.nn.functional.pad(
-            audio_waveform, (context, context + extension)
-        )
+        extension = math.ceil(audio_waveform.size(0) / window) * window - audio_waveform.size(0)
+        padded_waveform = torch.nn.functional.pad(audio_waveform, (context, context + extension))
         input_tensor = padded_waveform.unfold(0, window + 2 * context, window)
 
     # Batched Inference
@@ -204,9 +231,7 @@ def forced_align(
         The current version only supports ``batch_size==1``.
     """
     if blank in targets:
-        raise ValueError(
-            f"targets Tensor shouldn't contain blank index. Found {targets}."
-        )
+        raise ValueError(f"targets Tensor shouldn't contain blank index. Found {targets}.")
     if blank >= log_probs.shape[-1] or blank < 0:
         raise ValueError("blank must be within [0, log_probs.shape[-1])")
     if np.max(targets) >= log_probs.shape[-1] and np.min(targets) >= 0:
@@ -233,9 +258,7 @@ def get_alignments(
     dictionary["<star>"] = len(dictionary)
 
     # Force Alignment
-    token_indices = [
-        dictionary[c] for c in " ".join(tokens).split(" ") if c in dictionary
-    ]
+    token_indices = [dictionary[c] for c in " ".join(tokens).split(" ") if c in dictionary]
 
     blank_id = dictionary.get("<blank>", tokenizer.pad_token_id)
 
