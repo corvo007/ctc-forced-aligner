@@ -7,10 +7,7 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 
-from packaging import version
 from transformers import AutoModelForCTC, AutoTokenizer
-from transformers import __version__ as transformers_version
-from transformers.utils import is_flash_attn_2_available
 
 from .ctc_forced_aligner import forced_align as forced_align_cpp
 
@@ -254,6 +251,11 @@ def get_alignments(
     assert len(tokens) > 0, "Empty transcript"
 
     dictionary = tokenizer.get_vocab()
+    if len(dictionary) > tokenizer.vocab_size:
+        raise ValueError(
+            "Tokenizer vocabulary contains more tokens than expected. "
+            "Please open an issue on Github to report this and include the model name."
+        )
     dictionary = {k.lower(): v for k, v in dictionary.items()}
     dictionary["<star>"] = len(dictionary)
 
@@ -284,27 +286,7 @@ def load_alignment_model(
     attn_implementation: str = None,
     dtype: torch.dtype = torch.float32,
 ):
-    if attn_implementation is None:
-        if version.parse(transformers_version) < version.parse("4.41.0"):
-            attn_implementation = "eager"
-        elif (
-            is_flash_attn_2_available()
-            and device == "cuda"
-            and dtype in [torch.float16, torch.bfloat16]
-        ):
-            attn_implementation = "flash_attention_2"
-        else:
-            attn_implementation = "sdpa"
-
-    model = (
-        AutoModelForCTC.from_pretrained(
-            model_path,
-            attn_implementation=attn_implementation,
-            torch_dtype=dtype,
-        )
-        .to(device)
-        .eval()
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCTC.from_pretrained(model_path, dtype=dtype).to(device).eval()
+    tokenizer = AutoTokenizer.from_pretrained(model_path, word_delimiter_token=None)
 
     return model, tokenizer
