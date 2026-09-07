@@ -242,7 +242,7 @@ Contributions are welcome! Please feel free to open an issue or submit a pull re
 
 ### License
 
-This project is licensed under the BSD License, note that the default model has CC-BY-NC 4.0 License, so make sure to use a different model for commercial usage.
+This project is licensed under the BSD 2 Clause License, note that the default model has CC-BY-NC 4.0 License, so make sure to use a different model for commercial usage.
 
 ### Acknowledgements
 
